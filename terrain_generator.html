@@ -177,7 +177,7 @@
         }
         geometry.computeVertexNormals();
 
-        const material = new THREE.MeshLambertMaterial({ color: 0x88cc88, wireframe: false });
+        const material = new THREE.MeshLambertMaterial({ color: 0x88cc88, wireframe: false, side: THREE.DoubleSide });
         terrain = new THREE.Mesh(geometry, material);
         terrain.rotation.x = -Math.PI / 2;
         scene.add(terrain);
