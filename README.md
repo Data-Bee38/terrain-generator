@@ -1,1 +1,1 @@
-![Terrain Heightmap](Screenshot.png)
+![Terrain Heightmap](Screenshot.jpg)
