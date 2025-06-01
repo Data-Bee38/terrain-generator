@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Heightmap Terrain with Export Options</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.155.0/three.min.js"></script>
   <script src="https://unpkg.com/three@0.126.0/examples/js/controls/OrbitControls.js"></script>
@@ -23,19 +23,51 @@
       border-radius: 8px;
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     }
-    #urlInput {
+    #urlInput, #customFileLabel {
       width: 300px;
+      display: block;
       margin-bottom: 10px;
+    }
+    #customFileLabel {
+      padding: 5px 10px;
+      background-color: #007acc;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: center;
+    }
+    #fileInput {
+      display: none;
+    }
+    #fileName {
+      font-style: italic;
+      font-size: 0.9em;
+      margin-bottom: 10px;
+      display: block;
     }
     #generateBtn, #downloadBtn {
       padding: 5px 10px;
       cursor: pointer;
+      margin-right: 5px;
+    }
+    #orText {
+      text-align: center;
+      font-weight: bold;
+      margin: 10px 0;
+      color: #555;
     }
   </style>
 </head>
 <body>
 <div id="controls">
   <input id="urlInput" type="text" placeholder="Enter heightmap URL" />
+  
+  <div id="orText">— OR —</div>
+
+  <label for="fileInput" id="customFileLabel">Upload File</label>
+  <input id="fileInput" type="file" accept="image/*" />
+  <span id="fileName"></span>
+
   <button id="generateBtn">Generate Terrain</button>
   <select id="formatSelector">
     <option value="glb">GLB</option>
@@ -43,175 +75,177 @@
   </select>
   <button id="downloadBtn" disabled>Download Terrain</button>
 </div>
-<script>
-  const sizeX = 128, sizeY = 128, minHeight = 0, maxHeight = 15;
 
-  const img2matrix = (function () {
-    'use strict';
+  <script>
+    const sizeX = 128, sizeY = 128, minHeight = 0, maxHeight = 15;
 
-    return {
-      fromImage: fromImage,
-      fromUrl: fromUrl
-    }
+    const img2matrix = (function () {
+      return {
+        fromImage,
+        fromUrl
+      };
 
-    function fromImage(image, width, depth, minHeight, maxHeight) {
-      width = width | 0;
-      depth = depth | 0;
+      function fromImage(image, width, depth, minHeight, maxHeight) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = width;
+        canvas.height = depth;
 
-      const matrix = [];
-      const canvas = document.createElement('canvas'),
-            ctx = canvas.getContext('2d');
-      canvas.width = width;
-      canvas.height = depth;
+        ctx.drawImage(image, 0, 0, width, depth);
+        const imgData = ctx.getImageData(0, 0, width, depth).data;
+        const heightRange = maxHeight - minHeight;
 
-      ctx.drawImage(image, 0, 0, width, depth);
-      const imgData = ctx.getImageData(0, 0, width, depth).data;
-      const heightRange = maxHeight - minHeight;
-
-      for (let i = 0; i < depth; i++) {
-        const row = [];
-        for (let j = 0; j < width; j++) {
-          const pixel = i * width + j;
-          const height = imgData[pixel * 4] / 255 * heightRange + minHeight;
-          row.push(height);
+        const matrix = [];
+        for (let y = 0; y < depth; y++) {
+          const row = [];
+          for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            const height = imgData[i] / 255 * heightRange + minHeight;
+            row.push(height);
+          }
+          matrix.push(row);
         }
-        matrix.push(row);
+        return matrix;
       }
 
-      return matrix;
-    }
+      function fromUrl(url, width, depth, minHeight, maxHeight) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          image.crossOrigin = "anonymous";
+          image.onload = () => resolve(fromImage(image, width, depth, minHeight, maxHeight));
+          image.onerror = reject;
+          image.src = url;
+        });
+      }
+    })();
 
-    function fromUrl(url, width, depth, minHeight, maxHeight) {
-      return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.crossOrigin = "anonymous";
-        image.onload = () => {
-          const matrix = fromImage(image, width, depth, minHeight, maxHeight);
-          resolve(matrix);
-        };
-        image.onerror = reject;
-        image.src = url;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    camera.position.set(sizeX / 0.5, maxHeight + 100, 0);
+    camera.lookAt(sizeX / 2, 0, sizeY / 2);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 50, 50);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+    scene.add(new THREE.GridHelper(200, 50));
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.25;
+    controls.enableZoom = true;
+    controls.maxPolarAngle = Math.PI / 2.1;
+
+    let terrain;
+
+    function buildTerrain(heightData) {
+      if (terrain) scene.remove(terrain);
+
+      const geometry = new THREE.PlaneGeometry(sizeX, sizeY, sizeX - 1, sizeY - 1);
+
+      for (let i = 0; i < geometry.attributes.position.count; i++) {
+        const x = i % sizeX;
+        const y = Math.floor(i / sizeX);
+        geometry.attributes.position.setZ(i, heightData[y][x]);
+      }
+
+      geometry.computeVertexNormals();
+
+      const material = new THREE.MeshLambertMaterial({
+        color: 0x88cc88,
+        wireframe: false,
+        side: THREE.DoubleSide
       });
+
+      terrain = new THREE.Mesh(geometry, material);
+      terrain.rotation.x = -Math.PI / 2;
+      scene.add(terrain);
+
+      const downloadBtn = document.getElementById("downloadBtn");
+      downloadBtn.disabled = false;
+      downloadBtn.onclick = () => {
+        const format = document.getElementById("formatSelector").value;
+        format === "glb" ? downloadAsGLB(terrain) : downloadAsOBJ(terrain);
+      };
     }
-  })();
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-  const renderer = new THREE.WebGLRenderer();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+    function generateTerrain(url) {
+      img2matrix.fromUrl(url, sizeX, sizeY, minHeight, maxHeight)
+        .then(buildTerrain)
+        .catch(console.error);
+    }
 
-  camera.position.set(sizeX / .5, maxHeight + 100, 0);
-  camera.lookAt(sizeX / 2, 0, sizeY / 2);
-
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(0, 50, 50);
-  scene.add(light);
-
-  const ambientLight = new THREE.AmbientLight(0x404040);
-  scene.add(ambientLight);
-
-  const gridHelper = new THREE.GridHelper(200, 50);
-  scene.add(gridHelper);
-
-  window.addEventListener("resize", function () {
-    var width = window.innerWidth;
-    var height = window.innerHeight;
-    renderer.setSize(width, height);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-  });
-
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.25;
-  controls.enableZoom = true;
-  controls.maxPolarAngle = Math.PI / 2.1;
-
-  let terrain;
-
-  function downloadAsGLB(mesh) {
-    const exporter = new THREE.GLTFExporter();
-    exporter.parse(
-      mesh, 
-      (gltf) => {
+    function downloadAsGLB(mesh) {
+      const exporter = new THREE.GLTFExporter();
+      exporter.parse(mesh, gltf => {
         const blob = new Blob([gltf], { type: "model/gltf-binary" });
         const url = URL.createObjectURL(blob);
-
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "terrain.glb";
-        link.click();
-
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "terrain.glb";
+        a.click();
         URL.revokeObjectURL(url);
-      }, 
-      { binary: true }
-    );
-  }
-
-  function downloadAsOBJ(mesh) {
-    const exporter = new THREE.OBJExporter();
-    const objString = exporter.parse(mesh);
-    const blob = new Blob([objString], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "terrain.obj";
-    link.click();
-
-    URL.revokeObjectURL(url);
-  }
-
-  function generateTerrain(url) {
-    img2matrix.fromUrl(url, sizeX, sizeY, minHeight, maxHeight)
-      .then(heightData => {
-        if (terrain) scene.remove(terrain);
-
-        const geometry = new THREE.PlaneGeometry(sizeX, sizeY, sizeX - 1, sizeY - 1);
-
-        for (let i = 0, l = geometry.attributes.position.count; i < l; i++) {
-          const x = i % sizeX;
-          const y = Math.floor(i / sizeX);
-          geometry.attributes.position.setZ(i, heightData[y][x]);
-        }
-        geometry.computeVertexNormals();
-
-        const material = new THREE.MeshLambertMaterial({ color: 0x88cc88, wireframe: false, side: THREE.DoubleSide });
-        terrain = new THREE.Mesh(geometry, material);
-        terrain.rotation.x = -Math.PI / 2;
-        scene.add(terrain);
-
-        const downloadBtn = document.getElementById("downloadBtn");
-        downloadBtn.disabled = false;
-        downloadBtn.onclick = () => {
-          const format = document.getElementById("formatSelector").value;
-          if (format === "glb") {
-            downloadAsGLB(terrain);
-          } else if (format === "obj") {
-            downloadAsOBJ(terrain);
-          }
-        };
-      })
-      .catch(console.error);
-  }
-
-  document.getElementById('generateBtn').addEventListener('click', () => {
-    const url = document.getElementById('urlInput').value;
-    if (url) {
-      generateTerrain(url);
-    } else {
-      alert("Please enter a valid URL!");
+      }, { binary: true });
     }
-  });
 
-  function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-    controls.update();
-  }
+    function downloadAsOBJ(mesh) {
+      const exporter = new THREE.OBJExporter();
+      const obj = exporter.parse(mesh);
+      const blob = new Blob([obj], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "terrain.obj";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
-  animate();
-</script>
+    document.getElementById('generateBtn').addEventListener('click', () => {
+      const file = document.getElementById('fileInput').files[0];
+      const url = document.getElementById('urlInput').value;
+
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const matrix = img2matrix.fromImage(img, sizeX, sizeY, minHeight, maxHeight);
+            buildTerrain(matrix);
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      } else if (url) {
+        generateTerrain(url);
+      } else {
+        alert("Please enter a URL or upload a file.");
+      }
+    });
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      const fileNameSpan = document.getElementById('fileName');
+      fileNameSpan.textContent = e.target.files.length > 0 ? e.target.files[0].name : '';
+    });
+
+    window.addEventListener('resize', () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+      controls.update();
+    }
+
+    animate();
+  </script>
 </body>
 </html>
