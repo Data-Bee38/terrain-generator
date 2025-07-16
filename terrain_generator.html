@@ -76,176 +76,181 @@
   <button id="downloadBtn" disabled>Download Terrain</button>
 </div>
 
-  <script>
-    const sizeX = 128, sizeY = 128, minHeight = 0, maxHeight = 15;
+<script>
+  const sizeX = 128, sizeY = 128, minHeight = 0, maxHeight = 15;
+  const CORS_PROXY = "https://corsproxy.io/?";
 
-    const img2matrix = (function () {
-      return {
-        fromImage,
-        fromUrl
-      };
+  const img2matrix = (function () {
+    return {
+      fromImage,
+      fromUrl
+    };
 
-      function fromImage(image, width, depth, minHeight, maxHeight) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = width;
-        canvas.height = depth;
+    function fromImage(image, width, depth, minHeight, maxHeight) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = width;
+      canvas.height = depth;
 
-        ctx.drawImage(image, 0, 0, width, depth);
-        const imgData = ctx.getImageData(0, 0, width, depth).data;
-        const heightRange = maxHeight - minHeight;
+      ctx.drawImage(image, 0, 0, width, depth);
+      const imgData = ctx.getImageData(0, 0, width, depth).data;
+      const heightRange = maxHeight - minHeight;
 
-        const matrix = [];
-        for (let y = 0; y < depth; y++) {
-          const row = [];
-          for (let x = 0; x < width; x++) {
-            const i = (y * width + x) * 4;
-            const height = imgData[i] / 255 * heightRange + minHeight;
-            row.push(height);
-          }
-          matrix.push(row);
+      const matrix = [];
+      for (let y = 0; y < depth; y++) {
+        const row = [];
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          const height = imgData[i] / 255 * heightRange + minHeight;
+          row.push(height);
         }
-        return matrix;
+        matrix.push(row);
       }
+      return matrix;
+    }
 
-      function fromUrl(url, width, depth, minHeight, maxHeight) {
-        return new Promise((resolve, reject) => {
-          const image = new Image();
-          image.crossOrigin = "anonymous";
-          image.onload = () => resolve(fromImage(image, width, depth, minHeight, maxHeight));
-          image.onerror = reject;
-          image.src = url;
-        });
-      }
-    })();
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    camera.position.set(sizeX / 0.5, maxHeight + 100, 0);
-    camera.lookAt(sizeX / 2, 0, sizeY / 2);
-
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(0, 50, 50);
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0x404040));
-    scene.add(new THREE.GridHelper(200, 50));
-
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.25;
-    controls.enableZoom = true;
-    controls.maxPolarAngle = Math.PI / 2.1;
-
-    let terrain;
-
-    function buildTerrain(heightData) {
-      if (terrain) scene.remove(terrain);
-
-      const geometry = new THREE.PlaneGeometry(sizeX, sizeY, sizeX - 1, sizeY - 1);
-
-      for (let i = 0; i < geometry.attributes.position.count; i++) {
-        const x = i % sizeX;
-        const y = Math.floor(i / sizeX);
-        geometry.attributes.position.setZ(i, heightData[y][x]);
-      }
-
-      geometry.computeVertexNormals();
-
-      const material = new THREE.MeshLambertMaterial({
-        color: 0x88cc88,
-        wireframe: false,
-        side: THREE.DoubleSide
+    function fromUrl(url, width, depth, minHeight, maxHeight) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        image.onload = () => resolve(fromImage(image, width, depth, minHeight, maxHeight));
+        image.onerror = reject;
+        image.src = url;
       });
+    }
+  })();
 
-      terrain = new THREE.Mesh(geometry, material);
-      terrain.rotation.x = -Math.PI / 2;
-      scene.add(terrain);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
 
-      const downloadBtn = document.getElementById("downloadBtn");
-      downloadBtn.disabled = false;
-      downloadBtn.onclick = () => {
-        const format = document.getElementById("formatSelector").value;
-        format === "glb" ? downloadAsGLB(terrain) : downloadAsOBJ(terrain);
-      };
+  camera.position.set(sizeX / 0.5, maxHeight + 100, 0);
+  camera.lookAt(sizeX / 2, 0, sizeY / 2);
+
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(0, 50, 50);
+  scene.add(light);
+  scene.add(new THREE.AmbientLight(0x404040));
+  scene.add(new THREE.GridHelper(200, 50));
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.25;
+  controls.enableZoom = true;
+  controls.maxPolarAngle = Math.PI / 2.1;
+
+  let terrain;
+
+  function buildTerrain(heightData) {
+    if (terrain) scene.remove(terrain);
+
+    const geometry = new THREE.PlaneGeometry(sizeX, sizeY, sizeX - 1, sizeY - 1);
+
+    for (let i = 0; i < geometry.attributes.position.count; i++) {
+      const x = i % sizeX;
+      const y = Math.floor(i / sizeX);
+      geometry.attributes.position.setZ(i, heightData[y][x]);
     }
 
-    function generateTerrain(url) {
-      img2matrix.fromUrl(url, sizeX, sizeY, minHeight, maxHeight)
-        .then(buildTerrain)
-        .catch(console.error);
-    }
+    geometry.computeVertexNormals();
 
-    function downloadAsGLB(mesh) {
-      const exporter = new THREE.GLTFExporter();
-      exporter.parse(mesh, gltf => {
-        const blob = new Blob([gltf], { type: "model/gltf-binary" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "terrain.glb";
-        a.click();
-        URL.revokeObjectURL(url);
-      }, { binary: true });
-    }
+    const material = new THREE.MeshLambertMaterial({
+      color: 0x88cc88,
+      wireframe: false,
+      side: THREE.DoubleSide
+    });
 
-    function downloadAsOBJ(mesh) {
-      const exporter = new THREE.OBJExporter();
-      const obj = exporter.parse(mesh);
-      const blob = new Blob([obj], { type: "text/plain" });
+    terrain = new THREE.Mesh(geometry, material);
+    terrain.rotation.x = -Math.PI / 2;
+    scene.add(terrain);
+
+    const downloadBtn = document.getElementById("downloadBtn");
+    downloadBtn.disabled = false;
+    downloadBtn.onclick = () => {
+      const format = document.getElementById("formatSelector").value;
+      format === "glb" ? downloadAsGLB(terrain) : downloadAsOBJ(terrain);
+    };
+  }
+
+  function generateTerrain(url) {
+    img2matrix.fromUrl(url, sizeX, sizeY, minHeight, maxHeight)
+      .then(buildTerrain)
+      .catch(err => {
+        alert("Failed to load image. Try uploading instead.");
+        console.error(err);
+      });
+  }
+
+  function downloadAsGLB(mesh) {
+    const exporter = new THREE.GLTFExporter();
+    exporter.parse(mesh, gltf => {
+      const blob = new Blob([gltf], { type: "model/gltf-binary" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "terrain.obj";
+      a.download = "terrain.glb";
       a.click();
       URL.revokeObjectURL(url);
-    }
+    }, { binary: true });
+  }
 
-    document.getElementById('generateBtn').addEventListener('click', () => {
-      const file = document.getElementById('fileInput').files[0];
-      const url = document.getElementById('urlInput').value;
+  function downloadAsOBJ(mesh) {
+    const exporter = new THREE.OBJExporter();
+    const obj = exporter.parse(mesh);
+    const blob = new Blob([obj], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "terrain.obj";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            const matrix = img2matrix.fromImage(img, sizeX, sizeY, minHeight, maxHeight);
-            buildTerrain(matrix);
-          };
-          img.src = e.target.result;
+  document.getElementById('generateBtn').addEventListener('click', () => {
+    const file = document.getElementById('fileInput').files[0];
+    const url = document.getElementById('urlInput').value;
+
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const matrix = img2matrix.fromImage(img, sizeX, sizeY, minHeight, maxHeight);
+          buildTerrain(matrix);
         };
-        reader.readAsDataURL(file);
-      } else if (url) {
-        generateTerrain(url);
-      } else {
-        alert("Please enter a URL or upload a file.");
-      }
-    });
-
-    document.getElementById('fileInput').addEventListener('change', (e) => {
-      const fileNameSpan = document.getElementById('fileName');
-      fileNameSpan.textContent = e.target.files.length > 0 ? e.target.files[0].name : '';
-    });
-
-    window.addEventListener('resize', () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      renderer.setSize(width, height);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    });
-
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-      controls.update();
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    } else if (url) {
+      const proxiedUrl = url.startsWith('data:') ? url : `${CORS_PROXY}${encodeURIComponent(url)}`;
+      generateTerrain(proxiedUrl);
+    } else {
+      alert("Please enter a URL or upload a file.");
     }
+  });
 
-    animate();
-  </script>
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    const fileNameSpan = document.getElementById('fileName');
+    fileNameSpan.textContent = e.target.files.length > 0 ? e.target.files[0].name : '';
+  });
+
+  window.addEventListener('resize', () => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+    controls.update();
+  }
+
+  animate();
+</script>
 </body>
 </html>
