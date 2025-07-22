@@ -143,36 +143,93 @@
 
   let terrain;
 
-  function buildTerrain(heightData) {
-    if (terrain) scene.remove(terrain);
+ function buildTerrain(heightData) {
+  if (terrain) scene.remove(terrain);
 
-    const geometry = new THREE.PlaneGeometry(sizeX, sizeY, sizeX - 1, sizeY - 1);
+  const terrainGroup = new THREE.Group();
+  const geometry = new THREE.PlaneGeometry(sizeX, sizeY, sizeX - 1, sizeY - 1);
 
-    for (let i = 0; i < geometry.attributes.position.count; i++) {
-      const x = i % sizeX;
-      const y = Math.floor(i / sizeX);
-      geometry.attributes.position.setZ(i, heightData[y][x]);
-    }
-
-    geometry.computeVertexNormals();
-
-    const material = new THREE.MeshLambertMaterial({
-      color: 0x88cc88,
-      wireframe: false,
-      side: THREE.DoubleSide
-    });
-
-    terrain = new THREE.Mesh(geometry, material);
-    terrain.rotation.x = -Math.PI / 2;
-    scene.add(terrain);
-
-    const downloadBtn = document.getElementById("downloadBtn");
-    downloadBtn.disabled = false;
-    downloadBtn.onclick = () => {
-      const format = document.getElementById("formatSelector").value;
-      format === "glb" ? downloadAsGLB(terrain) : downloadAsOBJ(terrain);
-    };
+  for (let i = 0; i < geometry.attributes.position.count; i++) {
+    const x = i % sizeX;
+    const y = Math.floor(i / sizeX);
+    geometry.attributes.position.setZ(i, heightData[y][x]);
   }
+
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshLambertMaterial({ color: 0x88cc88, side: THREE.DoubleSide });
+  const topMesh = new THREE.Mesh(geometry, material);
+  topMesh.rotation.x = -Math.PI / 2;
+  terrainGroup.add(topMesh);
+
+  // === Build the solid base walls ===
+  const baseMaterial = new THREE.MeshLambertMaterial({
+    color: 0x88cc88,
+    side: THREE.DoubleSide
+  });
+  const baseY = 0;
+
+  const posAttr = geometry.attributes.position;
+
+  // Wall builder: connect 2 top points vertically down to baseY
+  function createWallSegment(p1, p2) {
+    const geom = new THREE.BufferGeometry();
+    const verts = new Float32Array([
+      p1.x, baseY, p1.z,
+      p2.x, baseY, p2.z,
+      p2.x, p2.y, p2.z,
+      p1.x, p1.y, p1.z,
+    ]);
+    const indices = [0, 1, 2, 0, 2, 3];
+    geom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return new THREE.Mesh(geom, baseMaterial);
+  }
+
+  // Helper: get vertex from PlaneGeometry after rotation
+  function getVertex(x, y) {
+    const index = y * sizeX + x;
+    const vx = (x / (sizeX - 1) - 0.5) * sizeX;
+    const vy = heightData[y][x];
+    const vz = (y / (sizeY - 1) - 0.5) * sizeY;
+    return new THREE.Vector3(vx, vy, vz);
+  }
+
+  // Build each edge: bottom, right, top, left
+  for (let i = 0; i < sizeX - 1; i++) {
+    // bottom edge
+    terrainGroup.add(createWallSegment(getVertex(i, 0), getVertex(i + 1, 0)));
+    // top edge
+    terrainGroup.add(createWallSegment(getVertex(i + 1, sizeY - 1), getVertex(i, sizeY - 1)));
+  }
+
+  for (let j = 0; j < sizeY - 1; j++) {
+    // right edge
+    terrainGroup.add(createWallSegment(getVertex(sizeX - 1, j), getVertex(sizeX - 1, j + 1)));
+    // left edge
+    terrainGroup.add(createWallSegment(getVertex(0, j + 1), getVertex(0, j)));
+  }
+
+  // Add a bottom base
+  const baseGeometry = new THREE.PlaneGeometry(sizeX, sizeY);
+  const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
+  baseMesh.rotation.x = -Math.PI / 2;
+  baseMesh.position.y = baseY;
+  terrainGroup.add(baseMesh);
+
+  terrain = terrainGroup;
+  scene.add(terrain);
+
+  // Enable download
+  const downloadBtn = document.getElementById("downloadBtn");
+  downloadBtn.disabled = false;
+  downloadBtn.onclick = () => {
+    const format = document.getElementById("formatSelector").value;
+    format === "glb" ? downloadAsGLB(terrain) : downloadAsOBJ(terrain);
+  };
+}
+
 
   function generateTerrain(url) {
     img2matrix.fromUrl(url, sizeX, sizeY, minHeight, maxHeight)
